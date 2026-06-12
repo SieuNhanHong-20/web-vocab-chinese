@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Học Tiếng Trung Ngắt Quãng</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/pinyin-pro"></script>
+  </head>
+  <body>
+    <header>
+      <nav class="menu-tabs">
+        <button class="tab-btn active" onclick="switchTab('study-tab')">
+          <i class="fa-solid fa-book-open"></i> Học & Nạp Thẻ
+        </button>
+        <button class="tab-btn" onclick="switchTab('stats-tab')">
+          <i class="fa-solid fa-chart-pie"></i> Thống Kê
+        </button>
+      </nav>
+      <div class="notification-bell" onclick="jumpToStudyDue()">
+        <i class="fa-solid fa-bell"></i>
+        <span id="bell-count" class="badge">0</span>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="study-tab" class="tab-content active">
+        <div class="upload-section card-box">
+          <h3><i class="fa-solid fa-file-import"></i> Nạp Thẻ Từ Vựng</h3>
+          <div class="upload-actions">
+            <button class="btn btn-secondary" onclick="downloadTemplate()">
+              <i class="fa-solid fa-download"></i> Tải File Mẫu (.csv)
+            </button>
+            <input
+              type="file"
+              id="csv-file"
+              accept=".csv"
+              style="display: none"
+              onchange="handleFileUpload(event)"
+            />
+            <button
+              class="btn btn-primary"
+              onclick="document.getElementById('csv-file').click()"
+            >
+              <i class="fa-solid fa-upload"></i> Tải Lên File Từ Vựng
+            </button>
+          </div>
+        </div>
+
+        <div class="flashcard-section">
+          <div id="no-cards" class="info-msg">
+            Chúc mừng! Bạn đã hoàn thành hết từ vựng cần học hôm nay. Hãy nạp
+            thêm từ mới nhé!
+          </div>
+
+          <div id="card-container" style="display: none">
+            <div class="flip-card" onclick="flipCard()">
+              <div class="flip-card-inner" id="flashcard">
+                <div class="flip-card-front">
+                  <span class="card-side-label">Mặt trước (Nghĩa)</span>
+                  <h1 id="front-meaning">Ý nghĩa</h1>
+                  <p class="sub-pinyin" id="front-pinyin-hint"></p>
+                  <button class="audio-btn" onclick="speakChinese(event)">
+                    <i class="fa-solid fa-volume-high"></i> Nghe
+                  </button>
+                </div>
+                <div class="flip-card-back">
+                  <span class="card-side-label">Mặt sau (Tiếng Trung)</span>
+                  <h1 id="back-chinese">中文</h1>
+                  <h2 id="back-pinyin">Zhōngwén</h2>
+                  <button class="audio-btn" onclick="speakChinese(event)">
+                    <i class="fa-solid fa-volume-high"></i> Nghe
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="action-buttons">
+              <button class="btn btn-danger" onclick="submitReview(1)">
+                Quên / Sai ❌
+              </button>
+              <button class="btn btn-warning" onclick="submitReview(3)">
+                Mơ hồ 🟡
+              </button>
+              <button class="btn btn-success" onclick="submitReview(5)">
+                Nhớ tốt 🟢
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="stats-tab" class="tab-content">
+        <div class="card-box text-center">
+          <h3>
+            <i class="fa-solid fa-chart-simple"></i> Trạng Thái Học Tập Hệ Thống
+          </h3>
+          <div class="chart-wrapper">
+            <canvas id="statsChart"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
