@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Học Tiếng Trung Ngắt Quãng</title>
+    <title>Học Tiếng Trung Ngắt Quãng - Flashcard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
     <link
       rel="stylesheet"
@@ -14,11 +20,15 @@
   </head>
   <body>
     <header>
+      <div class="logo">
+        <i class="fa-solid fa-graduation-cap text-gradient"></i>
+        <span>Hán Ngữ <b class="text-gradient">Spaced</b></span>
+      </div>
       <nav class="menu-tabs">
-        <button class="tab-btn active" onclick="switchTab('study-tab')">
-          <i class="fa-solid fa-book-open"></i> Học & Nạp Thẻ
+        <button class="tab-btn active" onclick="switchTab(event, 'study-tab')">
+          <i class="fa-solid fa-book-open"></i> Học & Thêm Từ
         </button>
-        <button class="tab-btn" onclick="switchTab('stats-tab')">
+        <button class="tab-btn" onclick="switchTab(event, 'stats-tab')">
           <i class="fa-solid fa-chart-pie"></i> Thống Kê
         </button>
       </nav>
@@ -30,8 +40,46 @@
 
     <main class="container">
       <section id="study-tab" class="tab-content active">
-        <div class="upload-section card-box">
-          <h3><i class="fa-solid fa-file-import"></i> Nạp Thẻ Từ Vựng</h3>
+        <div class="card-box decoration-line">
+          <h3>
+            <i class="fa-solid fa-plus-circle text-gradient"></i> Thêm Từ Vựng
+            Mới
+          </h3>
+          <form id="add-card-form" onsubmit="handleSingleSubmit(event)">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Chữ Hán (Ví dụ: 你好)</label>
+                <input
+                  type="text"
+                  id="input-chinese"
+                  placeholder="Nhập chữ Hán..."
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label>Nghĩa tiếng Việt (Ví dụ: Xin chào)</label>
+                <input
+                  type="text"
+                  id="input-meaning"
+                  placeholder="Nhập ý nghĩa..."
+                  required
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              class="btn btn-primary btn-block"
+              style="margin-top: 15px"
+            >
+              <i class="fa-solid fa-square-plus"></i> Lưu Vào Hệ Thống
+            </button>
+          </form>
+        </div>
+
+        <div class="card-box">
+          <h3>
+            <i class="fa-solid fa-file-import"></i> Nạp Từ Hàng Loạt (CSV)
+          </h3>
           <div class="upload-actions">
             <button class="btn btn-secondary" onclick="downloadTemplate()">
               <i class="fa-solid fa-download"></i> Tải File Mẫu (.csv)
@@ -44,7 +92,7 @@
               onchange="handleFileUpload(event)"
             />
             <button
-              class="btn btn-primary"
+              class="btn btn-dark"
               onclick="document.getElementById('csv-file').click()"
             >
               <i class="fa-solid fa-upload"></i> Tải Lên File Từ Vựng
@@ -53,41 +101,54 @@
         </div>
 
         <div class="flashcard-section">
-          <div id="no-cards" class="info-msg">
-            Chúc mừng! Bạn đã hoàn thành hết từ vựng cần học hôm nay. Hãy nạp
-            thêm từ mới nhé!
+          <div id="no-cards" class="info-msg animate-fade">
+            <div class="success-icon">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <h4>Tuyệt vời!</h4>
+            <p>
+              Bạn đã hoàn thành toàn bộ từ vựng cần học của ngày hôm nay. Hãy
+              thêm từ mới hoặc quay lại vào ngày mai nhé!
+            </p>
           </div>
 
           <div id="card-container" style="display: none">
             <div class="flip-card" onclick="flipCard()">
               <div class="flip-card-inner" id="flashcard">
                 <div class="flip-card-front">
-                  <span class="card-side-label">Mặt trước (Nghĩa)</span>
+                  <span class="card-side-label"
+                    ><i class="fa-solid fa-eye"></i> GỢI Ý NGHĨA</span
+                  >
                   <h1 id="front-meaning">Ý nghĩa</h1>
                   <p class="sub-pinyin" id="front-pinyin-hint"></p>
                   <button class="audio-btn" onclick="speakChinese(event)">
-                    <i class="fa-solid fa-volume-high"></i> Nghe
+                    <i class="fa-solid fa-volume-high"></i> Nghe phát âm
                   </button>
                 </div>
                 <div class="flip-card-back">
-                  <span class="card-side-label">Mặt sau (Tiếng Trung)</span>
-                  <h1 id="back-chinese">中文</h1>
+                  <span class="card-side-label"
+                    ><i class="fa-solid fa-language"></i> TIẾNG TRUNG</span
+                  >
+                  <h1 id="back-chinese" class="chinese-text">中文</h1>
                   <h2 id="back-pinyin">Zhōngwén</h2>
-                  <button class="audio-btn" onclick="speakChinese(event)">
-                    <i class="fa-solid fa-volume-high"></i> Nghe
+                  <button
+                    class="audio-btn accent-audio"
+                    onclick="speakChinese(event)"
+                  >
+                    <i class="fa-solid fa-volume-high"></i> Nghe lại
                   </button>
                 </div>
               </div>
             </div>
 
-            <div class="action-buttons">
-              <button class="btn btn-danger" onclick="submitReview(1)">
+            <div class="action-buttons animate-fade">
+              <button class="btn btn-danger" onclick="submitReview(event, 1)">
                 Quên / Sai ❌
               </button>
-              <button class="btn btn-warning" onclick="submitReview(3)">
+              <button class="btn btn-warning" onclick="submitReview(event, 3)">
                 Mơ hồ 🟡
               </button>
-              <button class="btn btn-success" onclick="submitReview(5)">
+              <button class="btn btn-success" onclick="submitReview(event, 5)">
                 Nhớ tốt 🟢
               </button>
             </div>
@@ -98,8 +159,12 @@
       <section id="stats-tab" class="tab-content">
         <div class="card-box text-center">
           <h3>
-            <i class="fa-solid fa-chart-simple"></i> Trạng Thái Học Tập Hệ Thống
+            <i class="fa-solid fa-chart-simple text-gradient"></i> Tiến Độ Học
+            Tập Lặp Lại Ngắt Quãng
           </h3>
+          <p style="color: #64748b; margin-bottom: 20px; font-size: 14px">
+            Biểu đồ thể hiện tỷ lệ ghi nhớ và các từ sắp đến hạn ôn tập của bạn.
+          </p>
           <div class="chart-wrapper">
             <canvas id="statsChart"></canvas>
           </div>

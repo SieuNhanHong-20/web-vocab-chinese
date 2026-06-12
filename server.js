@@ -8,7 +8,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Kết nối Database (Thay URL này bằng URL MongoDB Atlas của bạn khi deploy)
+// Kết nối Database
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://localhost:27017/spaced_repetition";
 mongoose
@@ -39,14 +39,26 @@ app.get("/api/cards", async (req, res) => {
   }
 });
 
-// API: Nạp từ vựng hàng loạt (Bulk Upload từ file CSV/Excel dạng JSON)
+// API MỚI BỔ SUNG: Thêm 1 từ vựng đơn lẻ từ form nhập liệu công thức chuẩn
+app.post("/api/cards", async (req, res) => {
+  try {
+    const { meaning, chinese, pinyin } = req.body;
+    const newCard = new Card({ meaning, chinese, pinyin });
+    await newCard.save();
+    res.json({ success: true, message: "Đã thêm từ vựng thành công!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Nạp từ vựng hàng loạt từ file CSV dạng mảng JSON
 app.post("/api/cards/upload", async (req, res) => {
   try {
-    const items = req.body; // Mảng các object {meaning, chinese, pinyin}
+    const items = req.body;
     await Card.insertMany(items);
     res.json({
       success: true,
-      message: `Đã nạp thành công ${items.length} từ!`,
+      message: `Đã nạp thành công ${items.length} từ vào hệ thống!`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -56,7 +68,7 @@ app.post("/api/cards/upload", async (req, res) => {
 // API: Cập nhật thẻ theo thuật toán lặp lại ngắt quãng SM-2
 app.put("/api/cards/:id/review", async (req, res) => {
   const { id } = req.params;
-  const { quality } = req.body; // Mức độ nhớ: 1 (Quên hoàn toàn), 3 (Nhớ mang máng), 5 (Thuộc làu)
+  const { quality } = req.body;
 
   try {
     const card = await Card.findById(id);
@@ -74,7 +86,6 @@ app.put("/api/cards/:id/review", async (req, res) => {
       interval = 1;
     }
 
-    // Cập nhật Hệ số dễ (Ease Factor) công thức chuẩn SM-2
     easeFactor =
       easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
     if (easeFactor < 1.3) easeFactor = 1.3;
@@ -83,7 +94,6 @@ app.put("/api/cards/:id/review", async (req, res) => {
     card.repetition = repetition;
     card.easeFactor = easeFactor;
 
-    // Tính toán ngày học tiếp theo
     const now = new Date();
     now.setDate(now.getDate() + interval);
     card.nextReview = now;
@@ -96,6 +106,4 @@ app.put("/api/cards/:id/review", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`),
-);
+app.listen(PORT, () => console.log(`🚀 Server đang chạy tại cổng ${PORT}`));
