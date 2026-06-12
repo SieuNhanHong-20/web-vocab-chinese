@@ -31,7 +31,10 @@ function switchTab(event, tabId) {
   }
 
   if (tabId === "stats-tab") {
-    renderChart();
+    // SỬA LỖI TRỄ HIỂN THỊ: Đợi 50ms để trình duyệt kịp vẽ xong Canvas rồi mới tạo biểu đồ
+    setTimeout(() => {
+      renderChart();
+    }, 50);
   }
 }
 
@@ -41,9 +44,12 @@ async function loadCards() {
     const res = await fetch("/api/cards");
     allCards = await res.json();
 
-    // Lọc các thẻ đã đến hạn học (nextReview <= thời gian hiện tại)
+    // SỬA LỖI LỆCH GIỜ: Cho phép từ mới tinh (repetition === 0) hiển thị học ngay lập tức
+    // không bị kẹt bởi múi giờ của server Render nhanh hơn máy tính của bạn
     const now = new Date();
-    dueCards = allCards.filter((card) => new Date(card.nextReview) <= now);
+    dueCards = allCards.filter(
+      (card) => card.repetition === 0 || new Date(card.nextReview) <= now,
+    );
 
     // Cập nhật số lượng chuông thông báo
     document.getElementById("bell-count").innerText = dueCards.length;
@@ -77,7 +83,7 @@ function showCard() {
 
   document.getElementById("front-meaning").innerText = card.meaning;
   document.getElementById("back-chinese").innerText = card.chinese;
-  document.getElementById("back-pinyin").innerText = card.pinyin;
+  document.getElementById("back-pinyin").innerText = card.pinyin || "";
 
   // Gợi ý ký tự Pinyin đầu tiên ở mặt trước để người dùng dễ định hình
   if (card.pinyin && card.pinyin.length > 2) {
@@ -134,7 +140,7 @@ async function submitReview(event, quality) {
     if (currentCardIndex < dueCards.length) {
       showCard();
     } else {
-      loadCards(); // Hoàn thành, tải lại data tổng
+      await loadCards(); // Hoàn thành, tải lại data tổng
     }
   } catch (err) {
     console.error("Lỗi cập nhật thuật toán thẻ:", err);
@@ -150,8 +156,17 @@ async function handleSingleSubmit(event) {
   if (!chinese || !meaning)
     return alert("Vui lòng nhập đầy đủ Chữ Hán và Nghĩa!");
 
-  // Sử dụng thư viện CDN PinyinPro để tự tạo phiên âm chuẩn có dấu tự động
-  const prettyPinyin = pinyinPro.pinyin(chinese) || "";
+  // BỌC AN TOÀN TRÁNH CRASH: Tự động kiểm tra và gọi thư viện phiên âm pinyinPro
+  let prettyPinyin = "";
+  try {
+    if (typeof pinyinPro !== "undefined" && pinyinPro.pinyin) {
+      prettyPinyin = pinyinPro.pinyin(chinese);
+    } else if (typeof pinyin !== "undefined") {
+      prettyPinyin = pinyin(chinese);
+    }
+  } catch (e) {
+    console.warn("Không tìm thấy thư viện PinyinPro:", e);
+  }
 
   try {
     const res = await fetch("/api/cards", {
@@ -163,7 +178,7 @@ async function handleSingleSubmit(event) {
     if (data.success) {
       alert(data.message);
       document.getElementById("add-card-form").reset();
-      loadCards(); // Cập nhật lại giao diện ngay lập tức
+      await loadCards(); // Cập nhật lại giao diện ngay lập tức
     }
   } catch (err) {
     console.error("Lỗi lưu từ đơn lẻ:", err);
@@ -177,7 +192,7 @@ function jumpToStudyDue() {
   initStudySession();
 }
 
-// Cố định lỗi tải file mẫu nhờ định dạng Blob UTF-8 không bao giờ lỗi Font Excel
+// Định dạng Blob UTF-8 không bao giờ lỗi Font Excel khi tải file mẫu
 function downloadTemplate() {
   const csvContent =
     "\uFEFFNghia,Tieng Trung\nVí dụ: Xin chào,你好\nVí dụ: Tạm biệt,再见\nCảm ơn bạn,谢谢";
@@ -208,7 +223,11 @@ function handleFileUpload(event) {
       if (columns.length >= 2) {
         const meaning = columns[0].trim();
         const chinese = columns[1].trim();
-        const prettyPinyin = pinyinPro.pinyin(chinese) || "";
+
+        let prettyPinyin = "";
+        if (typeof pinyinPro !== "undefined" && pinyinPro.pinyin) {
+          prettyPinyin = pinyinPro.pinyin(chinese);
+        }
 
         cardsToUpload.push({ meaning, chinese, pinyin: prettyPinyin });
       }
@@ -223,7 +242,7 @@ function handleFileUpload(event) {
       const data = await res.json();
       alert(data.message);
       document.getElementById("csv-file").value = ""; // Reset file input
-      loadCards();
+      await loadCards();
     }
   };
   reader.readAsText(file, "UTF-8");
@@ -232,12 +251,48 @@ function handleFileUpload(event) {
 // Vẽ biểu đồ thống kê trực quan bằng Chart.js
 function renderChart() {
   const total = allCards.length;
-  const now = new Date();
-  const dueCount = allCards.filter((c) => new Date(c.nextReview) <= now).length;
-  const learnedCount = total - dueCount;
-
   const ctx = document.getElementById("statsChart").getContext("2d");
   if (statsChart) statsChart.destroy();
+
+  // XỬ LÝ KHI CHƯA CÓ TỪ NÀO: Hiện vòng tròn xám thông báo đẹp mắt thay vì để trống trơn lỗi biểu đồ rỗng
+  if (total === 0) {
+    statsChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: ["Hệ thống chưa có dữ liệu từ vựng nào"],
+        datasets: [
+          {
+            data: [1],
+            backgroundColor: ["#e2e8f0"],
+            borderWidth: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: {
+              font: {
+                family: "'Plus Jakarta Sans', sans-serif",
+                size: 13,
+                weight: "500",
+              },
+            },
+          },
+        },
+      },
+    });
+    return;
+  }
+
+  const now = new Date();
+  const dueCount = allCards.filter(
+    (c) => c.repetition === 0 || new Date(c.nextReview) <= now,
+  ).length;
+  const learnedCount = total - dueCount;
 
   statsChart = new Chart(ctx, {
     type: "doughnut",
