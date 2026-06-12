@@ -1,109 +1,294 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const path = require("path");
+let allCards = [];
+let dueCards = [];
+let currentCardIndex = 0;
+let statsChart = null;
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
-
-// Kết nối Database
-const MONGO_URI =
-  process.env.MONGO_URI || "mongodb://localhost:27017/spaced_repetition";
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("⚡ Đã kết nối Database thành công!"))
-  .catch((err) => console.error("Lỗi kết nối DB:", err));
-
-// Định nghĩa cấu trúc dữ liệu Thẻ từ vựng (Thuật toán SM-2)
-const CardSchema = new mongoose.Schema({
-  meaning: String, // Nghĩa tiếng Việt
-  chinese: String, // Chữ Hán
-  pinyin: String, // Phiên âm tự động sinh
-  interval: { type: Number, default: 1 }, // Khoảng cách ngày lặp lại tiếp theo
-  repetition: { type: Number, default: 0 }, // Số lần đã nhớ liên tiếp
-  easeFactor: { type: Number, default: 2.5 }, // Hệ số dễ/khó của từ
-  nextReview: { type: Date, default: Date.now }, // Ngày đến hạn học tiếp theo
+// Tự động chạy khi trang tải xong
+document.addEventListener("DOMContentLoaded", () => {
+  loadCards();
 });
 
-const Card = mongoose.model("Card", CardSchema);
+// CHUYỂN TAB (Sửa lỗi khớp hoàn toàn với index.html)
+function switchTab(tabId) {
+  // Ẩn tất cả các tab nội dung và xóa trạng thái active của nút
+  document
+    .querySelectorAll(".tab-content")
+    .forEach((el) => el.classList.remove("active"));
+  document
+    .querySelectorAll(".tab-btn")
+    .forEach((el) => el.classList.remove("active"));
 
-// API: Lấy tất cả các từ để làm thống kê
-app.get("/api/cards", async (req, res) => {
-  try {
-    const cards = await Card.find();
-    res.json(cards);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  // Hiển thị tab được chọn
+  const targetTab = document.getElementById(tabId);
+  if (targetTab) targetTab.classList.add("active");
+
+  // Kích hoạt màu sáng cho nút tương ứng
+  const buttons = document.querySelectorAll(".tab-btn");
+  if (tabId === "study-tab" && buttons[0]) buttons[0].classList.add("active");
+  if (tabId === "stats-tab" && buttons[1]) {
+    buttons[1].classList.add("active");
+    // Đợi giao diện mượt rồi vẽ biểu đồ tránh lỗi 0x0
+    setTimeout(() => {
+      renderChart();
+    }, 50);
   }
-});
+}
 
-// API MỚI BỔ SUNG: Thêm 1 từ vựng đơn lẻ từ form nhập liệu công thức chuẩn
-app.post("/api/cards", async (req, res) => {
+// TẢI DỮ LIỆU TỪ BACKEND
+async function loadCards() {
   try {
-    const { meaning, chinese, pinyin } = req.body;
-    const newCard = new Card({ meaning, chinese, pinyin });
-    await newCard.save();
-    res.json({ success: true, message: "Đã thêm từ vựng thành công!" });
+    const res = await fetch("/api/cards");
+    allCards = await res.json();
+
+    // Lọc các từ cần học (Bỏ qua lệch múi giờ hệ thống Render)
+    const now = new Date();
+    dueCards = allCards.filter(
+      (card) => card.repetition === 0 || new Date(card.nextReview) <= now,
+    );
+
+    // Cập nhật số lượng hiển thị ở quả chuông thông báo
+    const bellCountEl = document.getElementById("bell-count");
+    if (bellCountEl) bellCountEl.innerText = dueCards.length;
+
+    initStudySession();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Không thể kết nối API lấy dữ liệu từ vựng:", err);
   }
-});
+}
 
-// API: Nạp từ vựng hàng loạt từ file CSV dạng mảng JSON
-app.post("/api/cards/upload", async (req, res) => {
-  try {
-    const items = req.body;
-    await Card.insertMany(items);
-    res.json({
-      success: true,
-      message: `Đã nạp thành công ${items.length} từ vào hệ thống!`,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+// KHỞI TẠO PHIÊN HỌC
+function initStudySession() {
+  const noCardsEl = document.getElementById("no-cards");
+  const cardContainerEl = document.getElementById("card-container");
+
+  if (dueCards.length > 0) {
+    currentCardIndex = 0;
+    if (noCardsEl) noCardsEl.style.display = "none";
+    if (cardContainerEl) cardContainerEl.style.display = "block";
+    showCard();
+  } else {
+    if (noCardsEl) noCardsEl.style.display = "block";
+    if (cardContainerEl) cardContainerEl.style.display = "none";
   }
-});
+}
 
-// API: Cập nhật thẻ theo thuật toán lặp lại ngắt quãng SM-2
-app.put("/api/cards/:id/review", async (req, res) => {
-  const { id } = req.params;
-  const { quality } = req.body;
+// ĐƯA DỮ LIỆU TỪ LÊN FLASHCARD
+function showCard() {
+  if (currentCardIndex >= dueCards.length) return;
 
-  try {
-    const card = await Card.findById(id);
-    if (!card) return res.status(404).json({ error: "Không tìm thấy thẻ" });
+  const card = dueCards[currentCardIndex];
 
-    let { interval, repetition, easeFactor } = card;
+  // Reset mặt thẻ về mặt trước trước khi hiển thị từ mới
+  const flipCardEl = document.querySelector(".flip-card");
+  if (flipCardEl) flipCardEl.classList.remove("flipped");
 
-    if (quality >= 3) {
-      if (repetition === 0) interval = 1;
-      else if (repetition === 1) interval = 6;
-      else interval = Math.round(interval * easeFactor);
-      repetition++;
+  document.getElementById("front-meaning").innerText = card.meaning;
+  document.getElementById("back-chinese").innerText = card.chinese;
+  document.getElementById("back-pinyin").innerText =
+    card.pinyin || "Chưa có phiên âm";
+
+  // Hiển thị gợi ý phiên âm nhẹ ở mặt trước
+  const hintEl = document.getElementById("front-pinyin-hint");
+  if (hintEl) {
+    if (card.pinyin && card.pinyin.length > 2) {
+      hintEl.innerText = `Gợi ý phiên âm: (${card.pinyin.substring(0, 2)}...)`;
     } else {
-      repetition = 0;
-      interval = 1;
+      hintEl.innerText = "";
+    }
+  }
+
+  // Tự động phát âm tiếng Trung sau 400ms
+  setTimeout(() => {
+    speakChineseWord(card.chinese);
+  }, 400);
+}
+
+// LẬT THẺ (Chạm vào thẻ là lật)
+function flipCard() {
+  const cardInner = document.querySelector(".flip-card");
+  if (cardInner) cardInner.classList.toggle("flipped");
+}
+
+// ĐỌC CHỮ HÁN
+function speakChineseWord(text) {
+  if ("speechSynthesis" in window && text) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "zh-CN";
+    utterance.rate = 0.8;
+    window.speechSynthesis.speak(utterance);
+  }
+}
+
+// NÚT PHÁT ÂM THỦ CÔNG (Sửa lỗi chặn không cho lật thẻ khi bấm nút loa)
+function speakChinese(event) {
+  if (event) event.stopPropagation();
+  const card = dueCards[currentCardIndex];
+  if (card) speakChineseWord(card.chinese);
+}
+
+// ĐÁNH GIÁ VÀ LƯU TRẠNG THÁI HỌC (Sửa lỗi nhận đúng thang điểm quality từ index.html)
+async function submitReview(quality) {
+  const card = dueCards[currentCardIndex];
+  if (!card) return;
+
+  try {
+    // Gửi kết quả lên server để lưu thuật toán lặp lại ngắt quãng
+    await fetch(`/api/cards/${card._id}/review`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quality: Number(quality) }),
+    });
+
+    currentCardIndex++;
+    if (currentCardIndex < dueCards.length) {
+      showCard();
+    } else {
+      await loadCards(); // Học xong hết thì tải lại toàn bộ trạng thái mới
+    }
+  } catch (err) {
+    console.error("Lỗi đồng bộ kết quả lưu từ vựng:", err);
+    alert("Không thể lưu trạng thái học, vui lòng kiểm tra mạng!");
+  }
+}
+
+// CLICK VÀO QUẢ CHUÔNG THÔNG BÁO
+function jumpToStudyDue() {
+  switchTab("study-tab");
+  initStudySession();
+}
+
+// TẢI FILE CSV MẪU XUỐNG KHÔNG LỖI FONT
+function downloadTemplate() {
+  const csvContent =
+    "\uFEFFNghia,Tieng Trung\nVí dụ: Xin chào,你好\nVí dụ: Tạm biệt,再见\nCảm ơn bạn,谢谢";
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", "mau_nap_tu_vung.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// ĐỌC VÀ LƯU FILE CSV TỪ VỰNG TẢI LÊN
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    const text = e.target.result;
+    const lines = text.split("\n");
+    const cardsToUpload = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const columns = lines[i].split(",");
+      if (columns.length >= 2) {
+        const meaning = columns[0].trim();
+        const chinese = columns[1].trim();
+
+        let prettyPinyin = "";
+        // Tự động chuyển đổi sang bính âm nếu có thư viện pinyinPro tích hợp sẵn ở head
+        try {
+          if (typeof pinyinPro !== "undefined" && pinyinPro.pinyin) {
+            prettyPinyin = pinyinPro.pinyin(chinese);
+          }
+        } catch (pErr) {
+          console.log(pErr);
+        }
+
+        cardsToUpload.push({ meaning, chinese, pinyin: prettyPinyin });
+      }
     }
 
-    easeFactor =
-      easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-    if (easeFactor < 1.3) easeFactor = 1.3;
+    if (cardsToUpload.length > 0) {
+      try {
+        const res = await fetch("/api/cards/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cardsToUpload),
+        });
+        const data = await res.json();
+        alert(data.message || "Đã nạp file từ vựng thành công!");
+        document.getElementById("csv-file").value = ""; // Reset input file
+        await loadCards(); // Cập nhật lại kho từ ngay lập tức
+      } catch (err) {
+        console.error("Lỗi kết nối khi upload file CSV:", err);
+        alert("Lưu file thất bại. Vui lòng kiểm tra lại server!");
+      }
+    }
+  };
+  reader.readAsText(file, "UTF-8");
+}
 
-    card.interval = interval;
-    card.repetition = repetition;
-    card.easeFactor = easeFactor;
+// VẼ BIỂU ĐỒ THỐNG KÊ (Chart.js)
+function renderChart() {
+  const total = allCards.length;
+  const canvas = document.getElementById("statsChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
 
-    const now = new Date();
-    now.setDate(now.getDate() + interval);
-    card.nextReview = now;
+  if (statsChart) statsChart.destroy();
 
-    await card.save();
-    res.json(card);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  // Nếu hệ thống hoàn toàn trống (Chưa nạp file từ vựng nào)
+  if (total === 0) {
+    statsChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: ["Hệ thống chưa có dữ liệu từ vựng nào"],
+        datasets: [
+          {
+            data: [1],
+            backgroundColor: ["#e2e8f0"],
+            borderWidth: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom" },
+        },
+      },
+    });
+    return;
   }
-});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server đang chạy tại cổng ${PORT}`));
+  const now = new Date();
+  const dueCount = allCards.filter(
+    (c) => c.repetition === 0 || new Date(c.nextReview) <= now,
+  ).length;
+  const learnedCount = total - dueCount;
+
+  statsChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: [
+        "Từ đang thuộc vững (Đợi hạn học tiếp)",
+        "Từ yếu / Đến hạn cần học ngay",
+      ],
+      datasets: [
+        {
+          data: [learnedCount, dueCount],
+          backgroundColor: ["#10b981", "#ff4a6b"],
+          borderWidth: 3,
+          borderColor: "#ffffff",
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { padding: 15 },
+        },
+      },
+    },
+  });
+}
